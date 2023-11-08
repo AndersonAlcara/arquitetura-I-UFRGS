@@ -1,0 +1,16 @@
+Símbolo         Valor Decimal   Valor Hexadecimal
+-------         -------------   -----------------
+DECIFRA                     4                   4
+AJUSTE_DEC                 20                  14
+CIFRA                      26                  1A
+AJUSTE_CIF                 46                  2E
+ATUALIZA                   48                  30
+FIM                        68                  44
+CONSTANTE                  71                  47
+VARIAVEL                   72                  48
+LIM_INF                    73                  49
+LIM_SUP                    74                  4A
+END_STR_INICIAL           192                  C0
+END_STR_FINAL             193                  C1
+PASSO                     194                  C2
+OPERACAO                  195                  C3

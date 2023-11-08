@@ -1,0 +1,72 @@
+;Nome: Anderson Alcara
+;Número: 00289464
+;Obj: fazer uma criptografia simples de uma entrada de acordo com o valores ascii
+;e seus respectivos passos.
+
+;; Área de programa
+;; Essa área deve ser usada para variáveis também
+ORG 0
+
+;; verifica a operacao a ser realizada
+LDR A OPERACAO
+JZ CIFRA			  ;; se op == 0 cifra, senao eh decifra
+
+;; área de decifragem
+DECIFRA: LDR A end_str_inicial, I ;; pegar valor da string inicial
+JZ FIM				  ;; caso posicao == 0, fim
+SUB A PASSO			  ;; senão, decifra
+STR A VARIAVEL
+SUB A LIM_INF			  ;; verifica se está nos limites 
+JN AJUSTE_DEC  			  ;; se negativo, circula
+ADD A LIM_INF			  ;; se zero ou positivo
+JMP ATUALIZA			  ;; senao, pula para local de armazenamento e atualizacao
+
+AJUSTE_DEC:
+LDR A VARIAVEL
+ADD A CONSTANTE
+JMP ATUALIZA
+
+;; área de cifragem
+CIFRA: LDR A end_str_inicial, I ;; pegar valor da string inicial
+JZ FIM				;; caso posicao == 0, fim
+ADD A PASSO			;; senão, decifra
+STR A VARIAVEL
+SUB A LIM_SUP			;; verifica se está nos limites 
+JN AJUSTE_CIF  			;; se negativo, mantem
+JZ AJUSTE_CIF			;; se deu zero, mantem
+LDR A VARIAVEL
+SUB A CONSTANTE 		;; se nao negativo, circula
+JMP ATUALIZA			
+
+AJUSTE_CIF: LDR A VARIAVEL
+
+ATUALIZA: STR A end_str_final, I ;; armazena na string de saida
+LDR B end_str_inicial	 ;; atualiza end da string de entrada			  
+ADD B #1
+STR B end_str_inicial 	
+LDR B end_str_final		 ;; atualiza end da string de saida
+ADD B #1
+STR B end_str_final
+LDR B OPERACAO			 ;; evita repeticao de codigo, verificamos OPERACAO
+JZ CIFRA
+JMP DECIFRA 
+
+FIM:
+STR A end_str_final, I ;; armazena na string de saida 
+HLT
+
+;; área de constantes
+CONSTANTE: db 26
+VARIAVEL: db
+LIM_INF: db 65
+LIM_SUP: db 90
+
+;; Área de Parâmetros de entrada
+ORG 192
+end_str_inicial: db 0
+end_str_final: db 0
+PASSO: db 0		;; valor entre 1 e 25
+OPERACAO: db 0		;; valor 0 -> cifra e !0 -> decifra
+
+;; Área EXCLUSIVA para string de entrada e string de saída
+ORG 196
