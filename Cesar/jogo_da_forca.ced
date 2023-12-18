@@ -1,0 +1,855 @@
+;Nome: Anderson Alcara
+;Numero: 00289464 
+; Area Reservada
+
+;; vidas e array com a palavra a ser adivinhada -----------------------------------------
+
+		org		H8000
+;; essa é uma área de 16 bits, cuidado com a escrita e leitura desse array
+
+
+;; FLAGS ********************************************************************************
+
+VICTORY: dw 0		;; flag para indicar vitoria, se igual a 1
+STR_VAL: dw 1	        ;; supomos que ela é valida inicialmente
+
+
+;; VARIÁVEIS ***************************************************************************
+
+SEGUNDOS:  dw 0		;; será contabilizado os segundos
+MINUTOS:   dw 0		;; será contabilizado os minutos
+VIDAS:     dw 0		;; valor entre 0 e 99, 0 game over
+VIDAS_AUX: dw 0		;; ajuda a evitar ficar atualizando vidas no visor sem necessidade
+VIDA_LSG:  dw		;; sao os valores em ascii do mais e menos 
+VIDA_MSG:  dw		;  significativos
+TECLA:     dw -1	;; recebe tecla, da interrupcao de teclado
+TECLA_AUX: dw -1	;; é usada para evitar loops desnecessários e decremento da vida
+TAM_ENT:   dw		;; tamanho da string de entrada, sem contar \0	
+CICLOS:    dw 4		;; numero de ciclos para 1s
+ACERTOU:   dw
+
+;; ARRAY *******************************************************************************
+
+PALAVRA: daw	[26]	;; 25 caracteres e mais um para '\0'
+
+;; PONTEIROS PARA ENDERECOS ************************************************************
+
+POS_PVISOR:    dw	;; recebe endereco do inicio da palavra de entrada no visor
+POS_VIDAS_MSG: dw	;; aponta para 1 primeiro byte, msg, das vidas.
+POS_VIDAS_LSG: dw	;; aponta para 1 segundo byte, msg, das vidas.
+
+;; FIM DA ÁREA DE VARIAVEIS, PONTEIROS E FLAGS *****************************************
+
+
+;; Acesso em 16 bits -------------------------------------------------------------------
+
+		org		HFF80
+STACK:
+	daw		[31]			; area reservada
+IVET:	dw		0			; Vetor de interrupcao
+
+		
+;; Acesso em 8 bits --------------------------------------------------------------------
+
+		org 		HFFC0
+
+	dab		[23]		; area livre
+TIMDT:	db		0		; Base de tempo do timer
+INTS:	db		0		; INTERRUPT STATUS: IP x x x . x x IPStec IPStim
+INTE:	db		0		; INTERRUPT ENABLE: IE x x x . x x IEStec IEStim
+TECST:	db		0		; Status do teclado
+TECDT:	db		0		; Dado do teclado
+VISOR:	dab		[36]		; Portas de acesso ao visor
+
+
+;=======================================================================================
+
+; Programa Principal
+
+	org		0
+
+;	Inicializa o processador e o hardware
+
+begin:
+	mov		#STACK,r6		; inicializa a pilha
+	clr		INTS			; Reset pedidos de interrup??o
+	clr		INTE			; reset habilitacao de interrupcao
+	clr		TECST			; Reset estado do hardware do teclado
+	mov 		#250 TIMDT		;; cada interrupcao a cada 250ms
+	mov		#isr,IVET		; Set Interrupt Service Rotine
+		
+;------------------------------------------------------------------------------------------
+
+ main:
+	jsr R7, LIMPA			;; limpa tela
+	jsr R7, WARNING			;; avisando o player
+	jsr R7, WAIT			;; deixando o player ler
+	jsr R7, LIMPA		
+
+	jsr R7, ENTRADA			;; escrever PALAVRA: e esperar pela entrada
+					;; solicitar entradas do player 1
+	jsr R7, CONTA			;; retorna na variavel TAM_ENT tamanho da string
+	cmp TAM_ENT #25			;; 25 tamanho limite da string
+	bgt main			;; se entrada inicial tem mais de 25 retorna ao inicio
+	tst TAM_ENT
+	beq main			;; se nao houve entrada inicial retorna ao inicio
+	
+	jsr R7, CHECK			;; verifica se as entradas sao validas
+	tst STR_VAL			;; é uma flag que indica
+	beq main			;; caso STR_VAL == 0, entao houve entrada invalida.
+	
+	;; continua, apos fazer a consistencia da entrada temos outras operacoes
+
+	jsr R7, CONVERSAO		;; converte a entrada valida no visor para MAIUSCULAS
+	jsr R7, WRITE			;; escreve a entrada do visor na string PALAVRA
+	jsr R7, LIMPA			;; limpa visor para inicio do jogo
+	mov TAM_ENT VIDAS		;; qtd vidas é diretamente proporcional ao tamanho da palavra
+
+	;; inicio do jogo
+
+	jsr R7 START			;; é a parte estática do jogo
+	
+;* VISA CONTORNAR PROBLEMA DE DECREMENTO NA VIDA, SEM NENHUMA TECLA DIGITADA ************************************
+
+	clr TECST			
+	clr TECDT
+	mov TECDT TECLA
+	mov TECLA TECLA_AUX
+
+;*****************************************************************************************************************
+		 
+	mov #h83 INTE			;; habilita interrupcoes de teclado e timer
+	
+	
+; inicio do loop de jogo *******************************************************************************************
+
+loop0:	
+	cmp VIDAS VIDAS_AUX		;; para evitar atualizar, algo já atualizado
+	beq move_on
+	jsr R7 VIDA_ATUAL		;; é uma das partes dinamicas, poe vida na tela ou atualiza
+	mov VIDAS VIDAS_AUX		;; auxiliar que evita execucoes desnecessarias
+
+move_on:
+
+	and #h81 INTE			;; desliga habilitacao de teclado, pois compartilha variavel teclado
+	jsr R7 GAME			;; é o jogo, tem possibilidade de decrementar vida
+	or  #h82 INTE			;; habilita novamente teclado
+	jsr R7 IS_WIN			;; verifica vitoria do player 2
+	tst VICTORY			;; verifica flag
+	bne gloria
+	
+	tst VIDAS
+	bne loop0			;; enquanto vida diferente de zero
+
+; fim do loop de jogo ***********************************************************************************************
+
+shame:
+	clr INTE  
+	;mov #h82 INTE			;; desabilitar timer e habilita teclado
+	jsr R7 VIDA_ATUAL		;; atualiza vida em zero
+	jsr R7 LIMPA			;; limpa tela
+	jsr R7 MSG			;; mensagem de vc perdeu! dada sempre ao player 2
+	br esperar
+
+gloria:
+	clr INTE	
+	;mov #h82 INTE			;; desabilitar timer e habilita teclado
+	jsr R7 LIMPA			;; limpa tela
+	jsr R7 MSG			;; mensagem de vc venceu! dada sempre ao player 2
+
+esperar:
+	jsr R7 PUT_TIME			;; colocar tempo de jogo no fim da msg
+	jsr R7 WAIT			;; deixar msg na tela por alguns segundos
+	jsr R7 LIMPA
+
+
+; area de reset *****************************************************************************
+
+	clr SEGUNDOS
+	clr MINUTOS
+	clr VICTORY
+	clr VIDAS
+	clr VIDAS_AUX
+	clr TAM_ENT
+	
+	mov #4 CICLOS
+	mov #-1 TECLA		
+	mov #-1 TECLA_AUX
+	mov #1 STR_VAL
+	
+
+; *******************************************************************************************
+
+ask_ent:				;; perguntar se quer jogar novamente ou encerrar
+	clr TECST			;; nao é mais usado interrupcao de teclado ou timer
+	jsr R7 AGAIN			;; mensagens se quer jogar de novo
+loopx:
+	cmp TECST #h80
+	bne loopx	
+
+	cmp TECDT #' '			;; se o pressionar é jogar novamente
+	beq jump16			;; qualquer outra letra é sair
+	
+	jsr R7 LIMPA
+	hlt				;; fim :(
+
+jump16:
+	jmp begin
+
+
+; Limpa o visor é uma sub-rotina ---------------------------------------------------------------	
+
+LIMPA:	
+		mov		#36,r0
+		mov		#VISOR,r1	;; endereco da primeira posicao do visor vai para
+						;; r1
+loop_reset:	
+		mov		#' ',(r1)
+		inc		r1
+		sob		r0,loop_reset
+		rts		r7
+
+
+; Rotina que solicita entrada do player 1 -------------------------------------------------------
+ 	
+
+ENTRADA: 
+	 mov #VISOR, R0
+	 mov #'P', (R0)
+	 inc R0
+	 mov #'A', (R0)
+	 inc R0
+	 mov #'L', (R0)
+	 inc R0
+	 mov #'A', (R0)
+	 inc R0
+	 mov #'V', (R0)
+	 inc R0
+	 mov #'R', (R0)
+	 inc R0
+	 mov #'A', (R0)
+	 inc R0
+	 mov #':', (R0)
+	 inc R0
+	 mov #' ', (R0)
+	 inc R0		;; AQUI TEMOS O SEGUINTE: PALAVRA: ESPERANDO
+			;; HÁ 36 POSICOES DISPONIVEIS A DIREITA, POREM O MAXIMO QUE 
+			;; ACEITAMOS 25
+	 
+	;; R0 contem endereco onde comecar a escrever e onde comecar a ler
+
+	 mov R0 POS_PVISOR	;; GUARDA INICIO DA PALAVRA NO VISOR
+
+	;; PODEMOS USAR UM LOOP, SEM INTERRUPCAO NESSE PRIMEIRO CASO.
+	;; Player 1 informa palavra a ser adivinhada
+
+loop1:	
+	cmp #h80 TECST	;; teclado tem entrada?
+	bne loop1	;; * bnq -> bne *
+	mov TECDT R1	;; move entradapara r1
+	clr TECST	;; libera status
+	;mov #-1 TECDT	;; ?
+	cmp #' ' R1	;; SE FOI PRESSIONADO ESPACO, FIM DAS ENTRADAS.
+	beq fim1
+	mov R1 (R0)	;; colocando o que esta em r1 no visor
+	inc R0
+	bne loop1	;; se nao aponta para posicao zero
+
+fim1:	
+	rts r7		;; se aponta fim da sub-rotina
+
+
+; Rotina que conta tamanho da entrada -------------------------------------------------
+
+	;; somente conta, nao verifica a validade das entradas
+CONTA:	
+	clr R1
+	mov POS_PVISOR R0	;; primeira posicao do visor que tem as entradas do p1
+loop2:	
+	cmp (r0) #' '		
+	beq fim2
+	inc R1
+	inc R0
+	br loop2			
+fim2:
+	mov R1 TAM_ENT
+	rts R7
+
+; Rotina que procura entrada invalida -----------------------------
+
+;; devemos chamar essa sub-rotina somente apos verificar se tamanho da string é <=25
+
+CHECK:	
+	mov POS_PVISOR R0
+
+loop3:
+	cmp (R0) #' '	;; caso termino da string, sem entradas invalidas
+	beq fim_val
+	cmp (R0) #'-'
+	beq certo	;; se igual ok, senao verificamos todos menores que A
+	cmp (R0) #'A'
+	blt fim_inv	;; se menor que A, logo é invalido
+	
+	cmp (R0) #'z'
+	bgt fim_inv	;; se maior que z, invalido
+			
+			;; se tudo acima é falso, logo estamos no intervalo fechado [A - z]
+			;; porem, dentro desse intervalo temos valores invalidos
+	cmp (R0) #'Z'
+	ble certo	;; se falso, estamos no intervalo (Z - z]
+
+	cmp (R0) #'a'
+	bge certo	;; se falso, estamos no intervalo (Z - a), logo é invalida
+	br fim_inv
+		
+certo:	
+	inc R0
+	br loop3 
+
+fim_inv: 
+	mov #0 STR_VAL
+	br fim_fim
+
+fim_val: 
+	mov #1 STR_VAL
+
+fim_fim: 
+	rts R7
+
+; Rotina que converte minusculas em MAIUSCULAS ------------------------------------------
+
+  ;; A conversao é feita no proprio visor
+  ;; sabemos a priori que as entradas sao válidas
+	
+  
+CONVERSAO: 
+	   mov TAM_ENT R1
+	   mov POS_PVISOR R0	
+
+loop4:	   
+	   cmp (R0) #'-'	 ;; verifica se é traço -
+	   beq n_altera		 
+	   cmp (R0) #'Z'	 ;; verifica se já é maiuscula
+	   ble n_altera
+	   
+	   mov (R0) R2		 ;; fiz isso para evitar problemas de operar no proprio visor
+	   add #-32 R2		 ;; se fosse no proprio visor seria uma operacao de 8 e 16 bits
+	   mov R2 (R0)   
+	  	   
+n_altera:  
+	   inc R0		 ;; essa operacao sempre tem de acontecer para avancar
+	   sob R1 loop4
+	   rts R7
+
+; Rotina que escreve no array palavra a ser descoberto ---------------------------------
+
+WRITE:	  
+	  mov #26 R1 		;; numero de words
+	  mov POS_PVISOR R0	;; inicializa ponteiros nos reg.
+	  mov #PALAVRA R3
+	
+loop5:	  
+	  mov (R0) R2		;; passa o que está no visor em r2	
+	  cmp R2 #' '		;; verifica se encerou a palavra no visor
+	  beq loop6		;; se encerrou, por enche o restante com '\0'  
+	  mov R2 (R3)+		;; senao encerrou, coloca letra no array e incrementa pos.array
+	  inc R0		;; incrementa posicao do visor 
+	  sob R1 loop5		;; para garantir q todas posicoes do array estao preenchidas
+
+loop6:	  
+	  mov #0 (R3)+		;; por encher resto da string com '\0'
+	  sob R1 loop6
+	  
+	  rts R7 
+
+; Rotina que oculta a palavra e mostra as vidas no visor(parcialmente) ----------------------------------------------
+
+START:	  
+	  mov TAM_ENT R0	
+	  mov #VISOR R1	  
+
+;* loop6 -> loopZ *
+loopZ:
+	  mov #'_' (R1)		;; colocar todas as letras da palavra
+	  inc R1
+	  sob R0 loopZ
+
+loop7:	  
+	  cmp R1 #HFFF7		;; vai encher posicoes restantes do visor com ' ' até chegar em hfff7
+	  beq vitae		
+	  mov #' ' (R1)
+	  inc R1
+	  br loop7
+
+vitae:	  
+	  mov #'V' (R1)
+	  inc R1
+	  mov #'i' (R1)
+	  inc R1
+	  mov #'d' (R1)
+	  inc R1
+   	  mov #'a' (R1)
+	  inc R1
+	  mov #'s' (R1)
+	  inc R1
+	  mov #':' (R1)
+	  inc R1
+	  mov #' ' (R1)
+	  inc R1
+
+	  ;; R1 contem a posicao das vidas
+
+	  mov R1 POS_VIDAS_MSG		; byte mais significativo de vidas
+	  inc R1
+	  mov R1 POS_VIDAS_LSG		; byte menos significativo de vidas
+
+	  rts R7
+
+; Rotina conversao Vidas para valores ASCII e coloca no visor -------------------------------------------
+
+;; converte vidas em compl.2 para 2 simbolos ascii
+;; coloca ou atualiza no visor seu valor.
+;; nao decrementa o valor de vida 
+
+
+VIDA_ATUAL: 
+
+	  mov #'0' VIDA_LSG  
+	  mov #'0' VIDA_MSG	
+	  mov VIDAS R0
+
+	  ;; se vida > 0
+loop8:	  
+	  tst R0
+	  beq no_visor
+	  inc VIDA_LSG
+	  cmp VIDA_LSG #'9'
+	  bgt salta
+	  dec R0 
+	  br loop8
+salta:	  
+	  mov #'0' VIDA_LSG	;; caso caso numero precise somar a segunda casa
+	  inc VIDA_MSG
+          dec R0
+	  br loop8
+
+no_visor: 
+	  mov POS_VIDAS_MSG R0	;; coloca os asciis obtidos da conversao no visor
+	  mov VIDA_MSG (R0)
+	  inc R0
+	  mov VIDA_LSG (R0) 
+
+final: 	  
+	  rts R7		;* PEQUENO ERRO JSR -> RTS *
+
+; Rotina para verificar se completou a palavra ----------------------------------------
+
+IS_WIN:   
+	  mov TAM_ENT R0
+	  mov #VISOR  R1
+	  
+loopA:	  
+	  cmp (R1) #'_'
+	  beq over3
+	  inc R1		;; * é necessário avancar no visor *
+	  sob R0 loopA
+	  mov #1 VICTORY	;; VICTORY é uma flag inicializada com 0	
+
+over3:	  
+	  rts R7
+
+
+; Rotina para achar letras ou decrementar vida ----------------------------------------
+
+; Se acertar letra, coloca no visor sem decrementar vida
+; se errar, decrementa vidas
+; como usa-se a variavel TECLA e ela é compartilhada deve-se evitar interrupcoes de
+; teclado durante o uso dessa variavel na rotina
+
+
+GAME:	 
+	 cmp TECLA TECLA_AUX	;; evita loops desncessarios e decremento da vida
+	 beq over5		;; se igual, nao entra
+	 mov TAM_ENT R0
+	 mov #PALAVRA R1
+	 mov #VISOR R2
+	 
+loopB:	 
+	 cmp TECLA (R1)+	;; compara entrada com valor na palavra 	  	  
+	 bne over4		;; se diferentes vai para a proxima
+
+	 mov TECLA (R2)		;; mostra no visor a letra na posicao
+	 mov #1 ACERTOU		;; indica com a flag que acertou		 
+
+over4:	 
+	 inc R2			;; percore posicoes do visor
+	 sob R0 loopB 
+	  
+	 tst ACERTOU		;; ACERTOU é uma flag que indica que acertou ao menos uma letra
+	 bne over5 
+	 dec VIDAS		;; errou, logo decrementamos
+	
+over5:	 
+	 mov TECLA TECLA_AUX    ;; para evitar usar novamente a mesma tecla
+	 clr ACERTOU		
+	 rts R7			
+
+
+; Rotina de mensagem de fim de jogo --------------------------------------------------------
+
+MSG:	
+	mov #VISOR R0
+	tst VICTORY
+	beq looser 		;; se vitocry == 1, venceu.
+	
+glory:
+	mov #'Y' (R0)
+	inc R0	  
+	mov #'o' (R0)
+	inc R0
+	mov #'u' (R0)
+	inc R0
+	mov #' ' (R0)
+	inc R0
+	mov #'W' (R0)
+	inc R0
+	mov #'i' (R0)
+	inc R0
+	mov #'n' (R0)
+	inc R0
+	mov #'!' (R0)
+	inc R0
+	br this_is_it
+
+looser: 
+	mov #'G' (R0)
+	inc R0
+	mov #'a' (R0)
+	inc R0	
+	mov #'m' (R0)
+	inc R0
+	mov #'e' (R0)
+	inc R0
+	mov #' ' (R0)
+	inc R0	
+	mov #'O' (R0)
+	inc R0
+	mov #'v' (R0)
+	inc R0
+	mov #'e' (R0)
+	inc R0
+	mov #'r' (R0)
+	inc R0
+
+this_is_it:
+	
+	clr VICTORY	;; seta victory para valor padrao, inicial do jogo
+	rts R7
+
+; Rotina coloca tempo ao fim do jogo ---------------------------------------------------
+
+
+PUT_TIME: mov #VISOR R0
+	  add #23 R0		;; coloca na posicao adequada
+	  
+	  mov #'T' (R0)
+	  inc R0
+	  mov #'i' (R0)
+	  inc R0
+	  mov #'m' (R0)
+	  inc R0
+	  mov #'e' (R0)
+	  inc R0
+	  mov #':' (R0)
+	  inc R0
+	  mov #' ' (R0)
+	  inc R0
+
+	  ;; inicializando valores de tempo
+	  
+	  mov #'0' (R0)
+	  inc R0
+	  mov #'0' (R0)
+	  inc R0
+	  mov #':' (R0)
+	  inc R0
+	  mov #'0' (R0)
+	  inc R0
+	  mov #'0' (R0)
+
+	  ;; segundos
+
+	  
+	  tst SEGUNDOS
+	  beq minutes
+	  
+	  mov SEGUNDOS R1
+
+;* ERREI, ADD (R0) -> INC (R0) *	  
+ajusta:	  inc (R0)		;; alterando o ascii da posicao apontada por r0
+	  cmp (R0) #'9'		;; 
+	  ble continue
+
+	  mov #'0' (R0)
+	  dec R0		;; é a byte e nao a palavra por isso fazemos desse modo
+          inc (R0)
+	  ;;inc -(R0)
+	  inc R0
+
+continue: 
+	  sob R1 ajusta		;; laco com tamanho de segundos 	
+			  
+
+minutes:  	  
+	  sub #3 R0		;; ajusta posicao para primeiro caracter de minutos
+	  
+	  tst MINUTOS
+	  beq termino
+	  
+	  mov MINUTOS R1
+
+;* ERREI, ADD (R0) -> INC (R0) *
+ajusta2:
+	  inc (R0)		;; alterando o ascii da posicao apontada por r0
+	  cmp (R0) #'9'		;; 
+	  ble continue2
+
+	  mov #'0' (R0)
+          dec R0		;; é a byte e nao a palavra por isso fazemos desse modo
+	  inc (R0)
+	  ;;inc -(R0)
+	  inc R0
+
+continue2: 
+	  sob R1 ajusta2	;; laco com tamanho de minutos
+
+	  
+termino:  rts R7
+
+; Rotina para esperar por 15 segundos --------------------------------------------------
+
+WAIT:
+	clr SEGUNDOS		;; seta = 0
+	or #h81 INTE		;; habilita timer
+	
+return:	
+	cmp SEGUNDOS #7		;; 7 segundos de parada
+	bne return
+
+	clr SEGUNDOS
+	and #h82 INTE		;; somente teclado
+	
+	rts R7
+
+; Rotina de pergunta no visor se quer jogar de novo ------------------------------------
+
+AGAIN:
+	mov #VISOR R0
+	
+	mov #'P' (R0)
+	inc R0
+	mov #'r' (R0)
+	inc R0
+	mov #'e' (R0)
+	inc R0
+	mov #'s' (R0)
+	inc R0
+	mov #'s' (R0)
+	inc R0
+
+	mov #':' (R0)
+	inc R0
+
+	mov #' ' (R0)
+	inc R0
+
+	mov #'S' (R0)
+	inc R0
+	mov #'p' (R0)
+	inc R0
+	mov #'a' (R0)
+	inc R0
+	mov #'c' (R0)
+	inc R0
+	mov #'e' (R0)
+	inc R0
+	mov #' ' (R0)
+	inc R0
+	mov #'-' (R0)
+	inc R0
+	mov #' ' (R0)
+	inc R0
+	mov #'P' (R0)
+	inc R0
+	mov #'l' (R0)
+	inc R0
+	mov #'a' (R0)
+	inc R0
+	mov #'y' (R0)
+	inc R0
+
+	mov #' ' (R0)
+	inc R0
+	mov #',' (R0)
+	inc R0
+	mov #' ' (R0)
+	inc R0
+	
+	mov #'O' (R0)
+	inc R0	
+	mov #'t' (R0)
+	inc R0
+	mov #'h' (R0)
+	inc R0
+	mov #'e' (R0)
+	inc R0
+	mov #'r' (R0)
+	inc R0
+	mov #' ' (R0)
+	inc R0
+	mov #'-' (R0)
+	inc R0
+	mov #' ' (R0)
+	inc R0
+	mov #'Q' (R0)
+	inc R0
+	mov #'u' (R0)
+	inc R0
+	mov #'i' (R0)
+	inc R0
+	mov #'t' (R0)
+	;inc R0
+	
+	rts R7
+
+
+; Rotina avisando sobre space no lugar de enter ----------------------------------------
+
+WARNING:
+	mov #VISOR R0
+	
+	mov #'P' (R0)
+	inc R0
+	mov #'r' (R0)
+	inc R0
+	mov #'e' (R0)
+	inc R0
+	mov #'s' (R0)
+	inc R0
+	mov #'s' (R0)
+	inc R0
+
+	mov #' ' (R0)
+	inc R0
+	
+	mov #'S' (R0)
+	inc R0
+	mov #'p' (R0)
+	inc R0
+	mov #'a' (R0)
+	inc R0
+	mov #'c' (R0)
+	inc R0
+	mov #'e' (R0)
+	inc R0
+	
+	mov #' ' (R0)
+	inc R0
+	
+	mov #'A' (R0)
+	inc R0
+	mov #'f' (R0)
+	inc R0
+	mov #'t' (R0)
+	inc R0
+	mov #'e' (R0)
+	inc R0
+	mov #'r' (R0)
+	inc R0
+	
+	mov #' ' (R0)
+	inc R0
+	
+	mov #'T' (R0)
+	inc R0
+	mov #'y' (R0)
+	inc R0
+	mov #'p' (R0)
+	inc R0
+	mov #'e' (R0)
+	;inc R0	
+
+	rts R7
+
+		  	 
+; Rotina de INTERRUPCAO ----------------------------------------------------------------
+
+; Só será chamada se as interrupcoes estiverem habilitadas
+
+isr:
+	mov		r0,-(r6)	; Salva registradores 
+	mov		r1,-(r6)
+	mov		r2,-(r6)
+	mov		r3,-(r6)
+	mov		r4,-(r6)
+	mov		r5,-(r6)
+
+tec1:	
+	mov		INTS,r0		; Verifica se é INT do Teclado
+	and		#2,r0
+	beq		time1		; se nao é teclado sai.
+	jsr		r7,ISRtec	; Tratamento da INT de teclado
+
+;; timer depois, porque para evitar o risco de liberar interrupcao de
+;; timer dentro da interrupcao
+
+time1:	
+	mov		INTS,r0		; Verifica se é INT do Timer
+	and		#1,r0
+	beq		bye		; se nao timer, checa teclado
+	jsr		r7,ISRtim	; Tratamento da INT de timer
+
+bye:
+	mov		(r6)+,r5	; Retorna os registradores da pilha
+	mov		(r6)+,r4
+	mov		(r6)+,r3
+	mov		(r6)+,r2
+	mov		(r6)+,r1
+	mov		(r6)+,r0
+
+	rti					; Return From Interrupt
+
+; ISRtim, tratamento de interrupcao de timer ---------------------------------------------
+	
+ISRtim:	
+	dec CICLOS	;; passou 1 ciclo
+	mov CICLOS R0
+	tst R0		;; checa fim de ciclo
+	bne over1
+
+	mov #4 CICLOS	;; reinicia ciclos
+	inc SEGUNDOS	;; incrementa em 1s
+			
+	cmp SEGUNDOS #60 ;; if(segundos==60)
+	bne over1
+
+	mov #0 SEGUNDOS	 ;; setamos pra zero caso if é V
+	inc MINUTOS	 ;; incrementamos minutos 
+
+over1:	
+	and		#hFFFE,INTS	; Desliga bit de INT timer
+	rts		R7
+
+; ISRtec, tratamento de interrupcao de teclado ---------------------------------------------
+	
+ISRtec: 
+	cmp TECDT #'Z'			; consistencia de entradas via teclado -> maiusculas
+	ble forget1
+	add #-32 TECDT			; se minuscula -> maiuscula 
+	
+forget1:
+	mov TECDT TECLA			; movemos tecdt -> tecla 		;;
+	clr TECST			; para poder avisar nova tecla
+
+	and #hFFFD,INTS			; Desliga bit de INT teclado
+	rts R7
