@@ -1,36 +1,45 @@
+;* ATENÇÃO, IMPLEMENTADO PARA 2 PLAYERS! *
+
 ;Nome: Anderson Alcara
-;Numero: 00289464 
+;Numero: 00289464
+ 
 ; Area Reservada
 
 ;; vidas e array com a palavra a ser adivinhada -----------------------------------------
 
 		org		H8000
+
 ;; essa é uma área de 16 bits, cuidado com a escrita e leitura desse array
 
+;; VARIÁVEIS ***************************************************************************
+
+VIDAS:     dw 0		;; valor entre 0 e 99, 0 game over
+
+;; ARRAY *******************************************************************************
+
+PALAVRA:   daw [26]	;; 25 caracteres e mais um para '\0'
+
+;; FIM ARRAY, CONTINUA VARIÁVEIS ******************************************************* 
+
+VIDAS_AUX: dw 0		;; ajuda a evitar ficar atualizando vidas no visor sem necessidade
+VIDA_LSG:  dw		;; sao os valores em ascii do mais e menos 
+VIDA_MSG:  dw		;  significativos
+
+SEGUNDOS:  dw 0		;; será contabilizado os segundos
+MINUTOS:   dw 0		;; será contabilizado os minutos
+
+TECLA:     dw -1	;; recebe tecla, da interrupcao de teclado
+TECLA_AUX: dw -1	;; é usada para evitar loops desnecessários e decremento da vida
+
+TAM_ENT:   dw		;; tamanho da string de entrada, sem contar \0	
+CICLOS:    dw 4		;; numero de ciclos para 1s
+ACERTOU:   dw
 
 ;; FLAGS ********************************************************************************
 
 VICTORY: dw 0		;; flag para indicar vitoria, se igual a 1
 STR_VAL: dw 1	        ;; supomos que ela é valida inicialmente
 
-
-;; VARIÁVEIS ***************************************************************************
-
-SEGUNDOS:  dw 0		;; será contabilizado os segundos
-MINUTOS:   dw 0		;; será contabilizado os minutos
-VIDAS:     dw 0		;; valor entre 0 e 99, 0 game over
-VIDAS_AUX: dw 0		;; ajuda a evitar ficar atualizando vidas no visor sem necessidade
-VIDA_LSG:  dw		;; sao os valores em ascii do mais e menos 
-VIDA_MSG:  dw		;  significativos
-TECLA:     dw -1	;; recebe tecla, da interrupcao de teclado
-TECLA_AUX: dw -1	;; é usada para evitar loops desnecessários e decremento da vida
-TAM_ENT:   dw		;; tamanho da string de entrada, sem contar \0	
-CICLOS:    dw 4		;; numero de ciclos para 1s
-ACERTOU:   dw
-
-;; ARRAY *******************************************************************************
-
-PALAVRA: daw	[26]	;; 25 caracteres e mais um para '\0'
 
 ;; PONTEIROS PARA ENDERECOS ************************************************************
 
